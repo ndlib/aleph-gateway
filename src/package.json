@@ -1,0 +1,13 @@
+{
+  "name": "aleph-gateway-lambdas",
+  "version": "1.0.0",
+  "author": "Hesburgh Libraries - WSE <web-and-software-engineering-group@nd.edu>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@sentry/node": "^5.19.0",
+    "node-fetch": "^2.6.0",
+    "oracledb": "^5.0.0",
+    "typy": "^3.3.0",
+    "xml2js": "^0.4.23"
+  }
+}
