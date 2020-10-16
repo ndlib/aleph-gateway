@@ -1,1 +1,3 @@
+yarn
+
 cd ./src && yarn
