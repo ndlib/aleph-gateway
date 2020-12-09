@@ -1,0 +1,83 @@
+{
+	"info": {
+		"_postman_id": "d9fea8a6-ef05-45c1-9e67-43e26998c73d",
+		"name": "Aleph Gateway - QA",
+		"description": "# Aleph Gateway API\n\nThis collection will run basic smoke tests to ensure that the API is running as expected.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Test Query",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "3fbed381-3d00-4177-93d7-e87b09e3b3a0",
+						"exec": [
+							"// Load the HTML into cheerio, which will let us easily select attributes for testing.",
+							"const $ = cheerio.load(pm.response.text());",
+							"",
+							"pm.test(\"Status code is 404\", function () {",
+							"    pm.response.to.have.status(404);",
+							"});",
+							"pm.test(\"Response time is less than 5000ms\", function () {",
+							"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{alephGatewayApiUrl}}/query?issn=1234",
+					"host": [
+						"{{alephGatewayApiUrl}}"
+					],
+					"path": [
+						"query"
+					],
+					"query": [
+						{
+							"key": "issn",
+							"value": "1234"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"id": "cf2c761d-074c-41e7-9f0e-c389a2c544ce",
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"id": "d2cb8719-28cf-4772-b116-e3e6efd51adf",
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"id": "4dd653d7-11a4-42a8-bdbf-578cfc832a27",
+			"key": "alephGatewayApiUrl",
+			"value": ""
+		}
+	],
+	"protocolProfileBehavior": {}
+}
