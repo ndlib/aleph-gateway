@@ -1,7 +1,7 @@
 const fetch = require('node-fetch')
 const xml2js = require('xml2js')
 const { t: typy } = require('typy')
-const { requestHeaders } = require('./shared/helpers')
+const { requestHeaders, mapItem } = require('./shared/helpers')
 const { successResponse, errorResponse } = require('./shared/response')
 const { sentryWrapper } = require('./shared/sentryWrapper')
 
@@ -47,7 +47,6 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   }
 
   const path = `${process.env.ALEPH_URL}/X?op=present&base=ndu01pub&set_number=${setNum}&set_entry=1-${recordCount}`
-  console.log('fetch from url 2', path)
   const data = await fetch(path, { headers: requestHeaders })
     .then(response => {
       if (response.ok) {
@@ -84,8 +83,7 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
 
     if (isValidEntry) {
       // save this aleph id as valid entry
-      const docNum = typy(record, 'doc_number[0]').safeString.trim()
-      validEntries.push(docNum)
+      validEntries.push(mapItem(record))
     }
   })
 
