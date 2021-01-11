@@ -88,7 +88,11 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   })
 
   if (!typy(validEntries).isArray) {
-    return errorResponse(callback, null, validEntries)
+    return errorResponse(callback, validEntries)
+  }
+
+  if (validEntries.length === 0) {
+    return errorResponse(callback, null, 404)
   }
 
   return successResponse(callback, validEntries)
