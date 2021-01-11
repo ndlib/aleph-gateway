@@ -120,7 +120,7 @@ const startEndYears = (fields) => {
   //     3. directly follows a slash
 
   // to get everything within parentheses
-  const parensRegex = /\(([\d]{4})\)/g
+  const parensRegex = /\(([\d]{4}).*?\)/g
   // get sequences of 4 numbers, these should be years (used on data from parensRegex)
   const yearRegex = /([\d]{4})/
   // Should match \A = start of string, / or - and then 4 numbers (the year)
@@ -150,11 +150,13 @@ const startEndYears = (fields) => {
             // if there are parens, year is inside them
             if (value.includes('(')) {
               const dates = value.match(parensRegex)
-              dates.forEach(date => {
-                const year = parseInt(date.match(yearRegex)[0])
-                start = Math.min(start, year)
-                end = Math.max(end, year)
-              })
+              if (dates && dates.length) {
+                dates.forEach(date => {
+                  const year = parseInt(date.match(yearRegex)[0])
+                  start = Math.min(start, year)
+                  end = Math.max(end, year)
+                })
+              }
             } else {
               // split on "=" to be correct in the following case
               // 2005:stycz.-2005:luty=2485-2492
