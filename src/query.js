@@ -1,7 +1,7 @@
 const fetch = require('node-fetch')
 const xml2js = require('xml2js')
 const { t: typy } = require('typy')
-const { requestHeaders } = require('./shared/helpers')
+const { requestHeaders, mapItem } = require('./shared/helpers')
 const { successResponse, errorResponse } = require('./shared/response')
 const { sentryWrapper } = require('./shared/sentryWrapper')
 
@@ -47,7 +47,6 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   }
 
   const path = `${process.env.ALEPH_URL}/X?op=present&base=ndu01pub&set_number=${setNum}&set_entry=1-${recordCount}`
-  console.log('fetch from url 2', path)
   const data = await fetch(path, { headers: requestHeaders })
     .then(response => {
       if (response.ok) {
@@ -84,13 +83,16 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
 
     if (isValidEntry) {
       // save this aleph id as valid entry
-      const docNum = typy(record, 'doc_number[0]').safeString.trim()
-      validEntries.push(docNum)
+      validEntries.push(mapItem(record))
     }
   })
 
   if (!typy(validEntries).isArray) {
-    return errorResponse(callback, null, validEntries)
+    return errorResponse(callback, validEntries)
+  }
+
+  if (validEntries.length === 0) {
+    return errorResponse(callback, null, 404)
   }
 
   return successResponse(callback, validEntries)
@@ -122,7 +124,7 @@ const startEndYears = (fields) => {
   //     3. directly follows a slash
 
   // to get everything within parentheses
-  const parensRegex = /\(([\d]{4})\)/g
+  const parensRegex = /\(([\d]{4}).*?\)/g
   // get sequences of 4 numbers, these should be years (used on data from parensRegex)
   const yearRegex = /([\d]{4})/
   // Should match \A = start of string, / or - and then 4 numbers (the year)
@@ -152,18 +154,23 @@ const startEndYears = (fields) => {
             // if there are parens, year is inside them
             if (value.includes('(')) {
               const dates = value.match(parensRegex)
-              dates.forEach(date => {
-                const year = parseInt(date.match(yearRegex)[0])
-                start = Math.min(start, year)
-                end = Math.max(end, year)
-              })
+              if (dates && dates.length) {
+                dates.forEach(date => {
+                  const year = parseInt(date.match(yearRegex)[0])
+                  start = Math.min(start, year)
+                  end = Math.max(end, year)
+                })
+              }
             } else {
               // split on "=" to be correct in the following case
               // 2005:stycz.-2005:luty=2485-2492
               const split = value.split('=')[0]
-              const year = parseInt(split.match(noParensRegex)[1]) // Group 1, as opposed to full match
-              start = Math.min(start, year)
-              end = Math.max(end, year)
+              const matchYear = split.match(noParensRegex)
+              if (matchYear && matchYear.length > 1) {
+                const year = parseInt(matchYear[1]) // Group 1, as opposed to full match
+                start = Math.min(start, year)
+                end = Math.max(end, year)
+              }
             }
           }
         }
