@@ -165,9 +165,12 @@ const startEndYears = (fields) => {
               // split on "=" to be correct in the following case
               // 2005:stycz.-2005:luty=2485-2492
               const split = value.split('=')[0]
-              const year = parseInt(split.match(noParensRegex)[1]) // Group 1, as opposed to full match
-              start = Math.min(start, year)
-              end = Math.max(end, year)
+              const matchYear = split.match(noParensRegex)
+              if (matchYear && matchYear.length > 1) {
+                const year = parseInt(matchYear[1]) // Group 1, as opposed to full match
+                start = Math.min(start, year)
+                end = Math.max(end, year)
+              }
             }
           }
         }
