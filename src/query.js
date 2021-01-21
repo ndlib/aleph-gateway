@@ -43,7 +43,7 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
 
   if (!setNum && !recordCount) {
     console.log('No record found matching query.')
-    return errorResponse(callback, null, 404)
+    return successResponse(callback, [], 200)
   }
 
   const path = `${process.env.ALEPH_URL}/X?op=present&base=ndu01pub&set_number=${setNum}&set_entry=1-${recordCount}`
@@ -92,7 +92,7 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   }
 
   if (validEntries.length === 0) {
-    return errorResponse(callback, null, 404)
+    return successResponse(callback, [], 200)
   }
 
   return successResponse(callback, validEntries)
