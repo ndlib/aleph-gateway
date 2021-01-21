@@ -39,6 +39,6 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     return errorResponse(callback, null, error.status)
   }
 
-  const items = typy(results, 'item-l').safeArray
+  const items = typy(results, 'bor-info.item-l').safeArray
   return successResponse(callback, mapLoanItems(items))
 })

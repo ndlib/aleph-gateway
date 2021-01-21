@@ -116,52 +116,109 @@ module.exports.mapItem = (record, systemId = '') => {
   return output
 }
 
-module.exports.mapLoanItems = (items) => {
-  const LOAN_TYPE = 'loan'
-  const PHOTO_TYPE = 'photo'
-
+module.exports.mapLoanItems = (items, isHolds) => {
   return typy(items).safeArray.map(item => {
-    const type = (item.RequestType === 'Loan' ? LOAN_TYPE : PHOTO_TYPE)
-    const output = {
-      type: type,
-      dueDate: (item.DueDate ? item.DueDate.split('T')[0] : ''), // 2017-06-28T00:00:00 => 2017-06-28
-      status: item.TransactionStatus,
-      transactionNumber: item.TransactionNumber,
-      transactionDate: item.TransactionDate,
-      creationDate: item.CreationDate,
-      callNumber: item.CallNumber,
-      issn: item.ISSN,
-      illNumber: item.ILLNumber,
-      documentType: item.DocumentType,
+    // Helper function to dive into the item details based on alephs record format
+    const getValue = (field, subfield) => {
+      if (!item || !item[field] || !Array.isArray(item[field])) {
+        return null
+      }
+
+      const fieldValue = item[field][0]
+      if (!subfield) {
+        return fieldValue
+      }
+
+      const subName = `${field}-${subfield}`
+      const subValue = fieldValue[subName]
+      if (!subValue) {
+        return null
+      }
+
+      // Return an array if there is more than one value, otherwise just the first value if there is only one
+      return (subValue.length === 1 ? subValue[0] : subValue)
     }
 
-    if (type === LOAN_TYPE) {
+    // Get the more complicated fields
+    const status = (() => {
+      if (isHolds) {
+        const holdsStatus = getValue('z37', 'status')
+        if (!holdsStatus) {
+          return `Ready for Pickup until ${getValue('z37', 'end-hold-date') || 'Unknown Date'}`
+        } else if (holdsStatus.includes('In process')) {
+          return 'In Process'
+        } else if (holdsStatus.includes('Waiting')) {
+          return 'Waiting in Queue'
+        }
+      }
+
+      const loanStatus = getValue('z36', 'status')
+      switch (loanStatus) {
+        case 'A':
+          return 'On Loan'
+        case 'C':
+          return 'Claimed Return'
+        case 'L':
+          return 'Lost'
+      }
+
+      return 'No status available'
+    })()
+
+    const formatDueDate = (dateStr) => {
+      if (!dateStr) {
+        return null
+      }
+      return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`
+    }
+    const formatLoanDate = (dateStr) => {
+      if (!dateStr) {
+        return null
+      }
+      return `${dateStr.substring(6, 10)}-${dateStr.substring(0, 2)}-${dateStr.substring(3, 5)}`
+    }
+    const fixSpaces = (str) => {
+      if (!str) {
+        return str
+      }
+
+      return str.replace(/&nbsp;/g, ' ')
+    }
+
+    const identifierType = (getValue('z13', 'isbn-issn-code') === '020' ? 'isbn' : 'issn')
+    let identifier = getValue('z13', 'isbn-issn')
+    if (identifier) {
+      // For ISBN/ISSN, remove all nondigits and ignore anything after the first space (if applicable)
+      identifier = identifier.split(' ')[0].replace(/[^0-9]/g, '')
+    }
+
+    const systemNumber = getValue('z13', 'doc-number')
+
+    // Create output object. Some values will be left empty at first and populated after
+    const output = {
+      material: getValue('z36', 'material'),
+      loanNumber: getValue('z36', 'number'),
+      docNumber: systemNumber ? systemNumber.padStart(9, '0') : null,
+      title: getValue('z13', 'title'),
+      author: getValue('z13', 'author'),
+      dueDate: formatDueDate(getValue('due-date')),
+      loanDate: formatLoanDate(getValue('z36', 'loan-date')),
+      published: getValue('z13', 'imprint'),
+      status: status,
+      barcode: getValue('z30', 'barcode'),
+      yearPublished: getValue('z13', 'year'),
+      callNumber: fixSpaces(getValue('z30', 'call-no')),
+      volume: getValue('z30', 'description'),
+      issn: (identifierType === 'issn' ? identifier : null),
+      isbn: (identifierType === 'isbn' ? identifier : null),
+    }
+
+    if (isHolds) {
+      const newMaterial = getValue('z30', 'material')
       Object.assign(output, {
-        title: item.LoanTitle,
-        author: item.LoanAuthor,
-        edition: item.LoanEdition,
-        publisher: item.LoanPublisher,
-        placeOfPublication: item.LoanPlace,
-        publicationDate: item.LoanDate,
-        journalTitle: '',
-        journalVolume: '',
-        journalIssue: '',
-        journalMonth: '',
-        journalYear: '',
-      })
-    } else if (type === PHOTO_TYPE) {
-      Object.assign(output, {
-        title: item.PhotoArticleTitle,
-        author: item.PhotoArticleAuthor,
-        edition: item.PhotoItemEdition,
-        publisher: item.PhotoItemPublisher,
-        placeOfPublication: item.PhotoItemPlace,
-        publicationDate: item.PhotoItemDate,
-        journalTitle: item.PhotoJournalTitle,
-        journalVolume: item.PhotoJournalVolume,
-        journalIssue: item.PhotoJournalIssue,
-        journalMonth: item.PhotoJournalMonth,
-        journalYear: item.PhotoJournalYear,
+        holdDate: getValue('z37', 'hold-date'),
+        pickupLocation: (status.includes('Ready for Pickup') ? getValue('z37', 'pickup-location') : null),
+        material: newMaterial ? newMaterial.toUpperCase() : undefined,
       })
     }
 

@@ -73,5 +73,8 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     return response(500, errorMessage)
   }
 
-  return successResponse(callback, response(200, result['due-date']))
+  const dueDateStr = result['due-date']
+  return successResponse(callback, response(200, {
+    dueDate: `${dueDateStr.substring(0, 4)}-${dueDateStr.substring(4, 6)}-${dueDateStr.substring(6, 8)}`,
+  }))
 })
