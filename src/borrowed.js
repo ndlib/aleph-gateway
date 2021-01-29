@@ -35,7 +35,7 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     })
     .then(xmlString => (typy(xmlString).isString ? xmlParser.parseStringPromise(xmlString) : null))
   // API returns an HTML page on forbidden instead of a 403 status code... blech
-  if (results.html) {
+  if (results && results.html) {
     console.error(JSON.stringify(results, null, 2))
     error = {
       status: 403,
