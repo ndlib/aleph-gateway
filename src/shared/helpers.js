@@ -1,4 +1,6 @@
 const { t: typy } = require('typy')
+const xml2js = require('xml2js')
+const fetch = require('node-fetch')
 const { errorResponse } = require('./response')
 
 module.exports.requestHeaders = {
@@ -139,51 +141,44 @@ module.exports.mapLoanItems = (items, isHolds) => {
       return (subValue.length === 1 ? subValue[0] : subValue)
     }
 
+    const formatAlephDate = (dateStr) => {
+      if (!dateStr || dateStr === '00000000') {
+        return null
+      }
+      return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`
+    }
+
     // Get the more complicated fields
     const status = (() => {
       if (isHolds) {
         const holdsStatus = getValue('z37', 'status')
-        if (!holdsStatus) {
-          return `Ready for Pickup until ${getValue('z37', 'end-hold-date') || 'Unknown Date'}`
+        if (!holdsStatus || holdsStatus === 'S') {
+          const endDate = formatAlephDate(getValue('z37', 'end-hold-date'))
+          return `Ready for Pickup until ${endDate || 'Unknown Date'}`
         } else if (holdsStatus.includes('In process')) {
           return 'In Process'
         } else if (holdsStatus.includes('Waiting')) {
           return 'Waiting in Queue'
         }
-      }
 
-      const loanStatus = getValue('z36', 'status')
-      switch (loanStatus) {
-        case 'A':
-          return 'On Loan'
-        case 'C':
-          return 'Claimed Return'
-        case 'L':
-          return 'Lost'
+        return 'No status available'
+      } else {
+        const loanStatus = getValue('z36', 'status')
+        switch (loanStatus) {
+          case 'A':
+          case 'Active':
+            return 'On Loan'
+          case 'C':
+          case 'Claimed Returned':
+            return 'Claimed Return'
+          case 'L':
+          case 'Lost':
+            return 'Lost'
+          default: // Pass the value as-is as long as there is one
+            return loanStatus || 'No status available'
+        }
       }
-
-      return 'No status available'
     })()
-
-    const formatDueDate = (dateStr) => {
-      if (!dateStr) {
-        return null
-      }
-      return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`
-    }
-    const formatLoanDate = (dateStr) => {
-      if (!dateStr) {
-        return null
-      }
-      return `${dateStr.substring(6, 10)}-${dateStr.substring(0, 2)}-${dateStr.substring(3, 5)}`
-    }
-    const fixSpaces = (str) => {
-      if (!str) {
-        return str
-      }
-
-      return str.replace(/&nbsp;/g, ' ')
-    }
 
     const identifierType = (getValue('z13', 'isbn-issn-code') === '020' ? 'isbn' : 'issn')
     let identifier = getValue('z13', 'isbn-issn')
@@ -201,22 +196,23 @@ module.exports.mapLoanItems = (items, isHolds) => {
       docNumber: systemNumber ? systemNumber.padStart(9, '0') : null,
       title: getValue('z13', 'title'),
       author: getValue('z13', 'author'),
-      dueDate: formatDueDate(getValue('due-date')),
-      loanDate: formatLoanDate(getValue('z36', 'loan-date')),
+      dueDate: formatAlephDate(getValue('z36', 'due-date')),
+      loanDate: formatAlephDate(getValue('z36', 'loan-date')),
       published: getValue('z13', 'imprint'),
       status: status,
       barcode: getValue('z30', 'barcode'),
       yearPublished: getValue('z13', 'year'),
-      callNumber: fixSpaces(getValue('z30', 'call-no')),
+      callNumber: getValue('z30', 'call-no'),
       volume: getValue('z30', 'description'),
       issn: (identifierType === 'issn' ? identifier : null),
       isbn: (identifierType === 'isbn' ? identifier : null),
+      renewable: isHolds ? undefined : (item.$.renew === 'Y'),
     }
 
     if (isHolds) {
       const newMaterial = getValue('z30', 'material')
       Object.assign(output, {
-        holdDate: getValue('z37', 'hold-date'),
+        holdDate: formatAlephDate(getValue('z37', 'hold-date')),
         pickupLocation: (status.includes('Ready for Pickup') ? getValue('z37', 'pickup-location') : null),
         material: newMaterial ? newMaterial.toUpperCase() : undefined,
       })
@@ -280,4 +276,38 @@ const getRecordValue = (fields, fieldId, i1, i2, subfieldId) => {
   })
   const values = filteredSubfields.map(subfield => typy(subfield, '_').safeString.trim()).filter(value => value)
   return values.join('\n')
+}
+
+module.exports.getAlephUserId = async (netid, library) => {
+  const url = `${process.env.ALEPH_URL}/X?op=bor_info&library=${library}&bor_id=${netid}&loans=N`
+  const xmlParser = xml2js.Parser({
+    tagNameProcessors: [xml2js.processors.stripPrefix],
+    attrNameProcessors: [xml2js.processors.stripPrefix],
+  })
+
+  let error = null
+  const results = await fetch(url, { headers: exports.requestHeaders })
+    .then(response => {
+      if (response.ok) {
+        return response.text()
+      } else {
+        error = response
+      }
+    })
+    .then(xmlString => (typy(xmlString).isString ? xmlParser.parseStringPromise(xmlString) : null))
+  // API returns an HTML page on forbidden instead of a 403 status code... blech
+  if (results && results.html) {
+    console.error(JSON.stringify(results, null, 2))
+    error = {
+      status: 403,
+    }
+  }
+
+  if (error) {
+    return {
+      error: error,
+    }
+  }
+
+  return typy(results, 'bor-info.z303[0].z303-id[0]').safeString
 }

@@ -1,7 +1,7 @@
 const fetch = require('node-fetch')
 const xml2js = require('xml2js')
 const { t: typy } = require('typy')
-const { mapLoanItems, requestHeaders, isAuthorized } = require('./shared/helpers')
+const { mapLoanItems, requestHeaders, isAuthorized, getAlephUserId } = require('./shared/helpers')
 const { successResponse, errorResponse } = require('./shared/response')
 const { sentryWrapper } = require('./shared/sentryWrapper')
 
@@ -18,7 +18,12 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     }
   }
 
-  const url = `${process.env.ALEPH_URL}/X?op=bor_info&library=${library}&bor_id=${netid}&loans=Y`
+  const alephId = await getAlephUserId(netid, library)
+  if (alephId.error) {
+    return errorResponse(callback, null, alephId.error.status)
+  }
+
+  const url = `${process.env.ALEPH_REST_API_URL}/patron/${alephId}/circulationActions/requests/holds?institution=${library}&view=full`
   const xmlParser = xml2js.Parser({
     tagNameProcessors: [xml2js.processors.stripPrefix],
     attrNameProcessors: [xml2js.processors.stripPrefix],
@@ -46,6 +51,10 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     return errorResponse(callback, null, error.status)
   }
 
-  const items = typy(results, 'bor-info.item-h').safeArray
-  return successResponse(callback, mapLoanItems(items, true))
+  let holds = []
+  const institutions = typy(results, 'pat-hold-list.hold-requests[0].institution').safeArray
+  institutions.forEach(inst => {
+    holds = holds.concat(typy(inst, 'hold-request').safeArray)
+  })
+  return successResponse(callback, mapLoanItems(holds, true))
 })
