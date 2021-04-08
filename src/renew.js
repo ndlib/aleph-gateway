@@ -1,7 +1,7 @@
 const fetch = require('node-fetch')
 const xml2js = require('xml2js')
 const { t: typy } = require('typy')
-const { requestHeaders, isAuthorized } = require('./shared/helpers')
+const { requestHeaders, isAuthorized, getAlephUserId } = require('./shared/helpers')
 const { successResponse, errorResponse } = require('./shared/response')
 const { sentryWrapper } = require('./shared/sentryWrapper')
 
@@ -24,14 +24,19 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     return errorResponse(callback, null, 400)
   }
 
-  const url = `${process.env.ALEPH_URL}/X?op=renew&library=${library}&bor_id=${netid}&item_barcode=${barcode}`
+  const alephId = await getAlephUserId(netid, library)
+  if (alephId.error) {
+    return errorResponse(callback, null, alephId.error.status)
+  }
+
+  const url = `${process.env.ALEPH_URL}/X?op=renew&library=${library}&bor_id=${alephId}&item_barcode=${barcode}`
   const xmlParser = xml2js.Parser({
     tagNameProcessors: [xml2js.processors.stripPrefix],
     attrNameProcessors: [xml2js.processors.stripPrefix],
   })
 
   let error = null
-  const result = await fetch(url, { method: 'POST', headers: requestHeaders })
+  const result = await fetch(url, { method: 'GET', headers: requestHeaders })
     .then(response => {
       if (response.ok) {
         return response.text()
@@ -48,13 +53,17 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   const response = (code, text) => {
     const body = {
       renewStatus: code,
-      statusText: text,
+      statusText: code !== 200 ? text : null,
+    }
+    // Expect "text" is actually an object for a successful response. Add all properties to the body
+    if (code === 200) {
+      Object.assign(body, text)
     }
     return successResponse(callback, body, code)
   }
 
   // handle aleph errors
-  const errorMessage = result.error || result['error-text-1'] || result['error-text-2']
+  const errorMessage = result.error || result['error-text-1'] || result['error-text-2'] || (result.renew && (result.renew.error || result.renew['error-text-1'] || result.renew['error-text-2'])) || (result.login && result.login.error)
   if (errorMessage) {
     if (errorMessage === "New due date must be bigger than current's loan due date") {
       return response(304)
@@ -73,8 +82,10 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     return response(500, errorMessage)
   }
 
-  const dueDateStr = result['due-date']
+  const dueDateStr = typy(result, 'renew.due-date[0]').safeString
   return successResponse(callback, response(200, {
-    dueDate: `${dueDateStr.substring(0, 4)}-${dueDateStr.substring(4, 6)}-${dueDateStr.substring(6, 8)}`,
+    dueDate: dueDateStr
+      ? `${dueDateStr.substring(0, 4)}-${dueDateStr.substring(4, 6)}-${dueDateStr.substring(6, 8)}`
+      : null,
   }))
 })
