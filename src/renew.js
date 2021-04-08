@@ -1,7 +1,7 @@
 const fetch = require('node-fetch')
 const xml2js = require('xml2js')
 const { t: typy } = require('typy')
-const { requestHeaders, isAuthorized } = require('./shared/helpers')
+const { requestHeaders, isAuthorized, getAlephUserId } = require('./shared/helpers')
 const { successResponse, errorResponse } = require('./shared/response')
 const { sentryWrapper } = require('./shared/sentryWrapper')
 
@@ -24,14 +24,19 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     return errorResponse(callback, null, 400)
   }
 
-  const url = `${process.env.ALEPH_URL}/X?op=renew&library=${library}&bor_id=${netid}&item_barcode=${barcode}`
+  const alephId = await getAlephUserId(netid, library)
+  if (alephId.error) {
+    return errorResponse(callback, null, alephId.error.status)
+  }
+
+  const url = `${process.env.ALEPH_URL}/X?op=renew&library=${library}&bor_id=${alephId}&item_barcode=${barcode}`
   const xmlParser = xml2js.Parser({
     tagNameProcessors: [xml2js.processors.stripPrefix],
     attrNameProcessors: [xml2js.processors.stripPrefix],
   })
 
   let error = null
-  const result = await fetch(url, { method: 'POST', headers: requestHeaders })
+  const result = await fetch(url, { method: 'GET', headers: requestHeaders })
     .then(response => {
       if (response.ok) {
         return response.text()
@@ -54,7 +59,7 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   }
 
   // handle aleph errors
-  const errorMessage = result.error || result['error-text-1'] || result['error-text-2']
+  const errorMessage = result.error || result['error-text-1'] || result['error-text-2'] || (result.login && result.login.error)
   if (errorMessage) {
     if (errorMessage === "New due date must be bigger than current's loan due date") {
       return response(304)
