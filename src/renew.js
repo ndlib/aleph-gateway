@@ -53,13 +53,17 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   const response = (code, text) => {
     const body = {
       renewStatus: code,
-      statusText: text,
+      statusText: code !== 200 ? text : null,
+    }
+    // Expect "text" is actually an object for a successful response. Add all properties to the body
+    if (code === 200) {
+      Object.assign(body, text)
     }
     return successResponse(callback, body, code)
   }
 
   // handle aleph errors
-  const errorMessage = result.error || result['error-text-1'] || result['error-text-2'] || (result.login && result.login.error)
+  const errorMessage = result.error || result['error-text-1'] || result['error-text-2'] || (result.renew && (result.renew.error || result.renew['error-text-1'] || result.renew['error-text-2'])) || (result.login && result.login.error)
   if (errorMessage) {
     if (errorMessage === "New due date must be bigger than current's loan due date") {
       return response(304)
@@ -78,8 +82,10 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     return response(500, errorMessage)
   }
 
-  const dueDateStr = result['due-date']
+  const dueDateStr = typy(result, 'renew.due-date[0]').safeString
   return successResponse(callback, response(200, {
-    dueDate: `${dueDateStr.substring(0, 4)}-${dueDateStr.substring(4, 6)}-${dueDateStr.substring(6, 8)}`,
+    dueDate: dueDateStr
+      ? `${dueDateStr.substring(0, 4)}-${dueDateStr.substring(4, 6)}-${dueDateStr.substring(6, 8)}`
+      : null,
   }))
 })
