@@ -70,9 +70,12 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   }
 
   // handle aleph errors
-  const errorMessage = result.error || result['error-text-1'] || result['error-text-2'] || (result.renew && (result.renew.error || result.renew['error-text-1'] || result.renew['error-text-2'])) || (result.login && result.login.error)
+  let errorMessage = result.error || result['error-text-1'] || result['error-text-2'] || (result.renew && (result.renew.error || result.renew['error-text-1'] || result.renew['error-text-2'])) || (result.login && result.login.error)
   if (errorMessage) {
     console.error(errorMessage)
+    if (errorMessage.length > 0) {
+      errorMessage = errorMessage[0]
+    }
     if (errorMessage === "New due date must be bigger than current's loan due date") {
       return response(304)
     } else if (
