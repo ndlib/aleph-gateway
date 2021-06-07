@@ -1,3 +1,7 @@
+const AWSXRay = require('aws-xray-sdk-core')
+AWSXRay.captureHTTPsGlobal(require('http'))
+AWSXRay.captureHTTPsGlobal(require('https'))
+
 const fetch = require('node-fetch')
 const xml2js = require('xml2js')
 const { t: typy } = require('typy')
@@ -6,6 +10,8 @@ const { successResponse, errorResponse } = require('./shared/response')
 const { sentryWrapper } = require('./shared/sentryWrapper')
 
 module.exports.handler = sentryWrapper(async (event, context, callback) => {
+  AWSXRay.capturePromise() // Must be inside function handler
+
   const systemId = typy(event, 'pathParameters.systemId').safeString
   if (!systemId) {
     console.log('No system id provided.')

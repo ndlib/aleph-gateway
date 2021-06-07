@@ -1,3 +1,7 @@
+const AWSXRay = require('aws-xray-sdk-core')
+AWSXRay.captureHTTPsGlobal(require('http'))
+AWSXRay.captureHTTPsGlobal(require('https'))
+
 const { t: typy } = require('typy')
 const { successResponse, errorResponse } = require('../shared/response')
 const { sentryWrapper } = require('../shared/sentryWrapper')
@@ -6,6 +10,8 @@ const { connect } = require('./connection')
 const alephMappings = require('../config/alephMappings.json')
 
 module.exports.handler = sentryWrapper(async (event, context, callback) => {
+  AWSXRay.capturePromise() // Must be inside function handler
+
   let netid = typy(event, 'requestContext.authorizer.netid').safeString
   const params = typy(event, 'queryStringParameters').safeObjectOrEmpty
 
@@ -28,43 +34,60 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
 })
 
 module.exports.queryUserInfo = async (netid) => {
+  const subsegment = AWSXRay.getSegment()
   let connection
   let result
+  let connectSegment
+  let querySegment
 
   try {
+    connectSegment = subsegment.addNewSubsegment('ConnectToDb')
     connection = await connect()
+    connectSegment.close()
 
-    result = await connection.execute(
-      `
-        SELECT
-          aleph_id,
-          patron_name,
-          home_library,
-          local_address_line_1,
-          local_address_line_2,
-          local_address_line_3,
-          local_address_line_4,
-          local_address_zip,
-          local_email_address,
-          local_address_telephone,
-          local_address_telephone_2,
-          open_date,
-          last_update_date,
-          expiry_date,
-          bor_status,
-          bor_type,
-          loan_permission,
-          hold_permission,
-          renew_permission,
-          nd_balance + hc_balance AS balance,
-          SUBSTR(campus_id, 1, 3) AS campus,
-          SUBSTR(campus_id, 4) AS campus_id
-        FROM ndrep.patron_mv
-        WHERE netid = UPPER(:netID)
-      `,
-      [netid],
-    )
+    const query = `
+      SELECT
+        aleph_id,
+        patron_name,
+        home_library,
+        local_address_line_1,
+        local_address_line_2,
+        local_address_line_3,
+        local_address_line_4,
+        local_address_zip,
+        local_email_address,
+        local_address_telephone,
+        local_address_telephone_2,
+        open_date,
+        last_update_date,
+        expiry_date,
+        bor_status,
+        bor_type,
+        loan_permission,
+        hold_permission,
+        renew_permission,
+        nd_balance + hc_balance AS balance,
+        SUBSTR(campus_id, 1, 3) AS campus,
+        SUBSTR(campus_id, 4) AS campus_id
+      FROM ndrep.patron_mv
+      WHERE netid = UPPER(:netID)
+    `
+
+    querySegment = subsegment.addNewSubsegment('QueryUserInfo')
+    querySegment.addSqlData({
+      database_type: 'OracleDB',
+      database_version: connection.oracleServerVersionString,
+      user: process.env.ALEPH_ORACLE_USER,
+      sanitized_query: query,
+    })
+    result = await connection.execute(query, [netid])
   } finally {
+    if (connectSegment && !connectSegment.isClosed()) {
+      connectSegment.close()
+    }
+    if (querySegment && !querySegment.isClosed()) {
+      querySegment.close()
+    }
     if (connection) {
       await connection.close()
     }
