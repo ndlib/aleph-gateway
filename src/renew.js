@@ -1,3 +1,7 @@
+const AWSXRay = require('aws-xray-sdk-core')
+AWSXRay.captureHTTPsGlobal(require('http'))
+AWSXRay.captureHTTPsGlobal(require('https'))
+
 const fetch = require('node-fetch')
 const xml2js = require('xml2js')
 const { t: typy } = require('typy')
@@ -6,6 +10,8 @@ const { successResponse, errorResponse } = require('./shared/response')
 const { sentryWrapper } = require('./shared/sentryWrapper')
 
 module.exports.handler = sentryWrapper(async (event, context, callback) => {
+  AWSXRay.capturePromise() // Must be inside function handler
+
   let netid = typy(event, 'requestContext.authorizer.netid').safeString
   const params = typy(event, 'queryStringParameters').safeObjectOrEmpty
   const library = encodeURIComponent(params.library || process.env.DEFAULT_LIBRARY)
@@ -35,6 +41,7 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
     attrNameProcessors: [xml2js.processors.stripPrefix],
   })
 
+  console.log('Attempting renewal:', url)
   let error = null
   const result = await fetch(url, { method: 'GET', headers: requestHeaders })
     .then(response => {
@@ -65,6 +72,7 @@ module.exports.handler = sentryWrapper(async (event, context, callback) => {
   // handle aleph errors
   const errorMessage = result.error || result['error-text-1'] || result['error-text-2'] || (result.renew && (result.renew.error || result.renew['error-text-1'] || result.renew['error-text-2'])) || (result.login && result.login.error)
   if (errorMessage) {
+    console.error(errorMessage)
     if (errorMessage === "New due date must be bigger than current's loan due date") {
       return response(304)
     } else if (
